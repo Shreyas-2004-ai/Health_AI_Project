@@ -1,0 +1,67 @@
+.footer-container{
+width: 100%;
+height:450px;
+background: linear-gradient(90deg, #1a1a1a, #292929);
+color: white;
+}
+
+.top-footer-content{
+    display:flex;
+    justify-content: space-between;
+}
+
+.first_footer-content{
+    padding: 150px 90px;
+    display:flex;
+}
+
+.f-logo > img{
+    height: 40px;
+    width: 40px;
+    border-radius: 50%;
+}
+
+.f-title{
+    font-size: 30px;
+    padding-left: 5px;
+}
+
+.second_footer-content{
+    
+    font-size: 30px;
+    padding-right: 60px;
+    line-height: 70px;
+    margin-top: 50px;
+     
+}
+
+.second_footer-content>a{
+    text-decoration:none;
+    color: white;
+}
+
+.third_footer-content{
+    padding-right: 50px;
+    line-height: 25px;
+}
+
+.third_footer-content > h2{
+     font-weight: bold;
+}
+.third_footer-content > .Visit_Us-content >pre > p{
+    padding-left: 200px;
+    font-size: 20px;
+}
+
+.third_footer-content > .heading2  > pre > p{
+    font-size: 20px;
+}
+
+hr{
+    width: 100%;
+}
+.bottom-footer-content{
+    text-align: center;
+    font-size: 23px;
+}
+
