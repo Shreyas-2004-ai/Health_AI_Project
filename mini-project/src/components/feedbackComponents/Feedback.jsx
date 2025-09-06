@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Footer from '../footerComponents/Footer';
 import './Feedback.css';
 
 const Feedback = () => {
@@ -294,6 +295,7 @@ const Feedback = () => {
           </div>
         </section>
       </div>
+      <Footer />
     </div>
   );
 };

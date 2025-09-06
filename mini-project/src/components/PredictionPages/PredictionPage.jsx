@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import Footer from '../footerComponents/Footer';
 import './PredictionPage.css';
 
 const PredictionPage = () => {
@@ -417,6 +418,7 @@ const PredictionPage = () => {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 };
