@@ -6,12 +6,14 @@ import About from './components/aboutusComponents/About';
 import Blogs from './components/blogsComponents/Blogs';
 import Feedback from './components/feedbackComponents/Feedback';
 import PredictionPage from './components/PredictionPages/PredictionPage';
+import MedicalBackground from './components/MedicalBackground';
 import './App.css';
 
 function App() {
   return (
     <Router>
       <div className="App">
+        <MedicalBackground />
         <Navbar />
         <main className="main-content">
           <Routes>

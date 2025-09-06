@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PredictionPage from '../PredictionPages/PredictionPage';
 import Footer from '../footerComponents/Footer';
+import HeroBackground from '../HeroBackground';
 import './demo.css';
 
 const Demo = () => {
@@ -15,6 +16,7 @@ const Demo = () => {
     <div className="demo-container">
       {/* Hero Section */}
       <section className="hero">
+        <HeroBackground />
         <div className="hero-content">
           <h1 className="hero-title animate-fade-in-up">
             AI-Powered Health Insights
@@ -30,13 +32,6 @@ const Demo = () => {
               Learn More
             </Link>
           </div>
-        </div>
-        
-        {/* Floating Elements */}
-        <div className="floating-elements">
-          <div className="floating-element element-1 animate-float"></div>
-          <div className="floating-element element-2 animate-float-delayed"></div>
-          <div className="floating-element element-3 animate-float"></div>
         </div>
       </section>
 

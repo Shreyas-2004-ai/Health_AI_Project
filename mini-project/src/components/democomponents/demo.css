@@ -38,7 +38,7 @@
   margin: 0 auto;
   padding: 0 var(--spacing-lg);
   position: relative;
-  z-index: 2;
+  z-index: 3;
 }
 
 .hero-title {
@@ -69,8 +69,14 @@
   animation: fadeInUp 1s ease-out 0.4s both;
 }
 
-/* Floating Elements */
-.floating-elements {
+/* Hero Section Enhancements */
+.hero {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+}
+
+.hero-background {
   position: absolute;
   top: 0;
   left: 0;
@@ -78,38 +84,6 @@
   height: 100%;
   pointer-events: none;
   z-index: 1;
-}
-
-.floating-element {
-  position: absolute;
-  border-radius: 50%;
-  background: var(--gradient-primary);
-  opacity: 0.1;
-  filter: blur(1px);
-}
-
-.element-1 {
-  width: 100px;
-  height: 100px;
-  top: 20%;
-  left: 10%;
-  animation: float3D 8s ease-in-out infinite;
-}
-
-.element-2 {
-  width: 150px;
-  height: 150px;
-  top: 60%;
-  right: 15%;
-  animation: float3D 10s ease-in-out infinite reverse;
-}
-
-.element-3 {
-  width: 80px;
-  height: 80px;
-  bottom: 30%;
-  left: 20%;
-  animation: float3D 12s ease-in-out infinite;
 }
 
 /* Section Styling */
