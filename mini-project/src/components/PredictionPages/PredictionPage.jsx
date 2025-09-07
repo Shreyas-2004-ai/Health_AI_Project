@@ -4,6 +4,7 @@ import Footer from '../footerComponents/Footer';
 import './PredictionPage.css';
 
 const PredictionPage = () => {
+  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
   const [symptoms, setSymptoms] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -235,7 +236,7 @@ const PredictionPage = () => {
         return symptom.replace(/ /g, '_').toLowerCase();
       });
       
-      const response = await axios.post('http://localhost:5000/api/predict', {
+      const response = await axios.post(`${API_BASE}/api/predict`, {
         symptoms: formattedSymptoms
       });
 
@@ -261,7 +262,7 @@ const PredictionPage = () => {
     if (!result || !result.disease || lastFormattedSymptoms.length === 0) return;
     try {
       setSendingFeedback(true);
-      await axios.post('http://localhost:5000/api/learn', {
+      await axios.post(`${API_BASE}/api/learn`, {
         symptoms: lastFormattedSymptoms,
         confirmed_disease: result.disease
       });
@@ -277,7 +278,7 @@ const PredictionPage = () => {
   const retrainModel = async () => {
     try {
       setRetraining(true);
-      const res = await axios.post('http://localhost:5000/api/retrain', {});
+      const res = await axios.post(`${API_BASE}/api/retrain`, {});
       if (res.data && res.data.success) {
         alert('Model retrained successfully. New classes loaded.');
       } else {
