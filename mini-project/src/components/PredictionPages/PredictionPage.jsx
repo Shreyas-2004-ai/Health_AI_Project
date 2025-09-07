@@ -12,6 +12,9 @@ const PredictionPage = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentInput, setCurrentInput] = useState('');
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
+  const [lastFormattedSymptoms, setLastFormattedSymptoms] = useState([]);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [retraining, setRetraining] = useState(false);
   const inputRef = useRef(null);
 
   // Complete list of symptoms from the backend system
@@ -237,6 +240,7 @@ const PredictionPage = () => {
       });
 
       setResult(response.data);
+      setLastFormattedSymptoms(formattedSymptoms);
     } catch (err) {
       console.error('Prediction error:', err);
       setError('Unable to connect to the prediction service. Please try again.');
@@ -250,6 +254,41 @@ const PredictionPage = () => {
     setResult(null);
     setError('');
     setShowSuggestions(false);
+    setLastFormattedSymptoms([]);
+  };
+
+  const sendFeedback = async () => {
+    if (!result || !result.disease || lastFormattedSymptoms.length === 0) return;
+    try {
+      setSendingFeedback(true);
+      await axios.post('http://localhost:5000/api/learn', {
+        symptoms: lastFormattedSymptoms,
+        confirmed_disease: result.disease
+      });
+      alert('Thanks! Your feedback will help improve the model.');
+    } catch (e) {
+      console.error('Feedback error:', e);
+      alert('Unable to send feedback right now.');
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
+
+  const retrainModel = async () => {
+    try {
+      setRetraining(true);
+      const res = await axios.post('http://localhost:5000/api/retrain', {});
+      if (res.data && res.data.success) {
+        alert('Model retrained successfully. New classes loaded.');
+      } else {
+        alert('Retrain failed. Check server logs.');
+      }
+    } catch (e) {
+      console.error('Retrain error:', e);
+      alert('Unable to retrain model right now.');
+    } finally {
+      setRetraining(false);
+    }
   };
 
   return (
@@ -318,6 +357,26 @@ const PredictionPage = () => {
                   New Analysis
                 </button>
               )}
+              {result && (
+                <button
+                  type="button"
+                  onClick={sendFeedback}
+                  className="btn btn-secondary"
+                  disabled={sendingFeedback}
+                  title="Mark this prediction as correct"
+                >
+                  {sendingFeedback ? 'Sending...' : 'Looks correct'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={retrainModel}
+                className="btn btn-warning"
+                disabled={retraining}
+                title="Retrain model with collected feedback"
+              >
+                {retraining ? 'Retraining...' : 'Retrain model'}
+              </button>
             </div>
           </form>
         </div>

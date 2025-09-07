@@ -8,6 +8,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
+from typing import List
+import difflib
 
 # Flask app
 app = Flask(__name__)
@@ -34,6 +36,20 @@ diets = pd.read_csv("src/datasets/diets.csv")
 
 # Load model
 svc = pickle.load(open('src/models/svc.pkl', 'rb'))
+
+# Optional: load a retrained feedback-driven model if available
+rf_model_path = 'src/models/feedback_rf.pkl'
+rf_model = None
+rf_feature_order: List[str] = []
+if os.path.exists(rf_model_path):
+    try:
+        with open(rf_model_path, 'rb') as f:
+            saved = pickle.load(f)
+            rf_model = saved.get('model')
+            rf_feature_order = saved.get('feature_order', [])
+    except Exception:
+        rf_model = None
+        rf_feature_order = []
 
 # Helper functions
 def helper(dis):
@@ -117,11 +133,298 @@ diseases_list = {15: 'Fungal infection', 4: 'Allergy', 16: 'GERD', 9: 'Chronic c
 
 
 # Model prediction function
-def get_predicted_value(patient_symptoms):
+def _map_symptoms_with_fuzzy(symptom_list: List[str]):
+    """Normalize and fuzzy-match symptoms to known keys in symptoms_dict."""
+    known_keys = list(symptoms_dict.keys())
+    mapped = []
+    unknown = []
+    for s in symptom_list:
+        if not s:
+            continue
+        s_norm = str(s).strip().lower().replace(' ', '_')
+        # quick fixes for common typos
+        replacements = {
+            'congestio': 'congestion',
+            'eadache': 'headache',
+            'diarrhea': 'diarrhoea',
+            'shortness_of_breath': 'breathlessness'
+        }
+        if s_norm in replacements:
+            s_norm = replacements[s_norm]
+        if s_norm in symptoms_dict:
+            mapped.append(s_norm)
+            continue
+        # fuzzy match
+        match = difflib.get_close_matches(s_norm, known_keys, n=1, cutoff=0.78)
+        if match:
+            mapped.append(match[0])
+        else:
+            unknown.append(s)
+    return mapped, unknown
+
+
+def get_predicted_value(patient_symptoms, top_k=3):
+    # Filter to known symptoms and build input vector
+    known_symptoms, fuzzy_unknown = _map_symptoms_with_fuzzy(patient_symptoms)
     input_vector = np.zeros(len(symptoms_dict))
-    for item in patient_symptoms:
+    for item in known_symptoms:
         input_vector[symptoms_dict[item]] = 1
-    return diseases_list[int(svc.predict([input_vector])[0])]
+
+    # Guard: if no known symptoms, return low-confidence response
+    if input_vector.sum() == 0:
+        return {
+            'primary_disease': None,
+            'confidence': 0.0,
+            'top_predictions': [],
+            'unknown_symptoms': fuzzy_unknown
+        }
+
+    # Try to get class scores
+    scores = None
+    confidences = None
+    try:
+        classes = getattr(svc, 'classes_', None)
+        # Normalize classes to string disease names when possible
+        label_names = None
+        if classes is not None:
+            label_names = []
+            for c in classes:
+                if isinstance(c, str):
+                    label_names.append(c)
+                else:
+                    try:
+                        label_names.append(diseases_list.get(int(c), str(c)))
+                    except Exception:
+                        label_names.append(str(c))
+
+        if hasattr(svc, 'predict_proba'):
+            proba = svc.predict_proba([input_vector])[0]
+            confidences = proba
+            scores = proba
+            class_names_for_scores = label_names if label_names is not None else [diseases_list.get(i) for i in range(len(proba))]
+        else:
+            # Use decision_function and convert to pseudo-probabilities via softmax
+            decision = svc.decision_function([input_vector])
+            decision = np.array(decision).ravel()
+            # Handle binary SVM where decision_function returns single score
+            if decision.shape[0] == 1 and classes is not None and len(classes) == 2:
+                decision = np.array([-decision[0], decision[0]])
+            # numerical-stable softmax
+            exps = np.exp(decision - np.max(decision))
+            softmax = exps / np.sum(exps)
+            confidences = softmax
+            scores = softmax
+            class_names_for_scores = label_names if label_names is not None else [diseases_list.get(i) for i in range(len(softmax))]
+    except Exception:
+        # Fallback to hard prediction only
+        raw = svc.predict([input_vector])[0]
+        if isinstance(raw, str):
+            disease = raw
+        else:
+            try:
+                disease = diseases_list.get(int(raw))
+            except Exception:
+                disease = str(raw)
+        return {
+            'primary_disease': disease,
+            'confidence': None,
+            'top_predictions': [{'disease': disease, 'confidence': None}],
+            'unknown_symptoms': fuzzy_unknown
+        }
+
+    # Map class indices to disease names consistently
+    # Build an ordered list of (disease, confidence)
+    pred_pairs = []
+    for idx in range(len(confidences)):
+        name = None
+        if 'class_names_for_scores' in locals() and class_names_for_scores is not None:
+            name = class_names_for_scores[idx]
+        if name is None:
+            # fallback to diseases_list by index
+            name = diseases_list.get(idx, str(idx))
+        pred_pairs.append((name, float(confidences[idx])))
+
+    # Rule-based overrides for classic symptom clusters (allow partial matches)
+    classic_rules = [
+        ({'cough', 'runny_nose', 'sore_throat', 'mild_fever', 'congestion'}, 'Common Cold', 3),
+        ({'nausea', 'vomiting', 'diarrhoea', 'abdominal_pain'}, 'Gastroenteritis', 3),
+        ({'burning_micturition', 'bladder_discomfort', 'foul_smell_of urine', 'continuous_feel_of_urine'}, 'Urinary tract infection', 3),
+        ({'itching', 'skin_rash'}, 'Fungal infection', 2),
+        ({'headache', 'nausea', 'vomiting'}, 'Migraine', 2),
+        ({'cough', 'breathlessness', 'chest_pain'}, 'Bronchial Asthma', 2),
+        ({'yellowish_skin', 'yellow_urine', 'dark_urine', 'yellowing_of_eyes'}, 'Jaundice', 3),
+        ({'high_fever', 'headache', 'pain_behind_the_eyes', 'nausea'}, 'Dengue', 3),
+        ({'high_fever', 'abdominal_pain', 'diarrhoea', 'vomiting'}, 'Typhoid', 3),
+        ({'acidity', 'stomach_pain', 'vomiting'}, 'GERD', 2),
+        ({'weight_loss', 'polyuria', 'increased_appetite', 'fatigue'}, 'Diabetes ', 3)
+    ]
+    known_set = set(known_symptoms)
+    for req_set, disease_name, min_count in classic_rules:
+        if len(req_set.intersection(known_set)) >= min_count:
+            return {
+                'primary_disease': disease_name,
+                'confidence': 0.6,
+                'top_predictions': [{'disease': disease_name, 'confidence': 0.6}],
+                'unknown_symptoms': fuzzy_unknown
+            }
+
+    # Post-filter severe diagnoses unless hallmark symptoms present
+    severe_hallmarks = {
+        'AIDS': {'weight_loss', 'extra_marital_contacts', 'receiving_blood_transfusion', 'receiving_unsterile_injections'},
+        'Heart attack': {'chest_pain', 'fast_heart_rate', 'sweating'},
+        'Paralysis (brain hemorrhage)': {'weakness_of_one_body_side', 'slurred_speech', 'loss_of_balance'},
+        'Tuberculosis': {'cough', 'blood_in_sputum', 'chest_pain', 'malaise'},
+        'Hepatitis B': {'yellowing_of_eyes', 'dark_urine', 'yellowish_skin'},
+        'Hepatitis C': {'yellowing_of_eyes', 'dark_urine', 'yellowish_skin'}
+    }
+
+    filtered_pairs = []
+    for disease_name, conf in pred_pairs:
+        if disease_name in severe_hallmarks:
+            if len(severe_hallmarks[disease_name].intersection(known_set)) == 0:
+                # Skip severe disease if no hallmark symptoms present
+                continue
+        filtered_pairs.append((disease_name, conf))
+
+    # Fall back to original pairs if filtering removes all
+    if not filtered_pairs:
+        filtered_pairs = pred_pairs
+
+    # Sort by confidence desc and take top_k after filtering
+    filtered_pairs.sort(key=lambda x: x[1], reverse=True)
+    top = filtered_pairs[:max(1, top_k)]
+
+    primary_disease, primary_conf = top[0]
+
+    # Heuristic: if confidence is low and there are few symptoms, avoid alarming diagnoses
+    severe_set = {
+        'AIDS', 'Heart attack', 'Paralysis (brain hemorrhage)', 'Tuberculosis',
+        'Hepatitis B', 'Hepatitis C', 'Hepatitis D', 'Hepatitis E', 'Alcoholic hepatitis'
+    }
+    min_symptoms_for_severe = 3
+    low_conf_threshold = 0.35
+
+    if (primary_disease in severe_set and
+        (len(known_symptoms) < min_symptoms_for_severe or primary_conf < low_conf_threshold) and
+        len(top) > 1):
+        # Prefer the next best non-severe if available
+        for cand_disease, cand_conf in top[1:]:
+            if cand_disease not in severe_set:
+                primary_disease, primary_conf = cand_disease, cand_conf
+                break
+
+    return {
+        'primary_disease': primary_disease,
+        'confidence': float(primary_conf),
+        'top_predictions': [{'disease': d, 'confidence': c} for d, c in top],
+        'unknown_symptoms': [s for s in patient_symptoms if s not in symptoms_dict]
+    }
+
+
+def ensure_feedback_store():
+    """Ensure feedback CSV exists with the same schema as Training.csv."""
+    feedback_path = 'src/datasets/user_feedback.csv'
+    if not os.path.exists(feedback_path):
+        try:
+            train = pd.read_csv('src/datasets/Training.csv')
+            # Create empty file with same columns
+            empty = train.iloc[0:0]
+            empty.to_csv(feedback_path, index=False)
+        except Exception:
+            # Minimal fallback: create columns from symptoms_dict + prognosis
+            cols = list(symptoms_dict.keys()) + ['prognosis']
+            pd.DataFrame(columns=cols).to_csv(feedback_path, index=False)
+    return feedback_path
+
+
+def append_feedback(symptoms: List[str], confirmed_disease: str):
+    """Append a labeled example to the feedback CSV in one-hot format."""
+    feedback_path = ensure_feedback_store()
+    # Load header to get column order
+    header = pd.read_csv(feedback_path, nrows=0)
+    cols = list(header.columns)
+    feature_cols = [c for c in cols if c != 'prognosis']
+    row = {c: 0 for c in feature_cols}
+    # Map known symptoms to 1
+    for s in symptoms:
+        if s in row:
+            row[s] = 1
+    row['prognosis'] = confirmed_disease
+    # Append
+    df_row = pd.DataFrame([row])[cols]
+    df_row.to_csv(feedback_path, mode='a', header=False, index=False)
+
+
+def retrain_feedback_model():
+    """Train a RandomForest on Training.csv + user feedback; persist with feature order."""
+    try:
+        base = pd.read_csv('src/datasets/Training.csv')
+        feedback_path = ensure_feedback_store()
+        fb = pd.read_csv(feedback_path)
+        combined = pd.concat([base, fb], ignore_index=True)
+        # Separate X, y
+        feature_cols = [c for c in combined.columns if c != 'prognosis']
+        X = combined[feature_cols].values
+        y = combined['prognosis'].values
+        # Use class_weight balanced
+        from sklearn.ensemble import RandomForestClassifier
+        rf = RandomForestClassifier(n_estimators=400, class_weight='balanced', random_state=42)
+        rf.fit(X, y)
+        # Persist
+        os.makedirs('src/models', exist_ok=True)
+        with open(rf_model_path, 'wb') as f:
+            pickle.dump({'model': rf, 'feature_order': feature_cols}, f)
+        # Update in-memory
+        global rf_model, rf_feature_order
+        rf_model = rf
+        rf_feature_order = feature_cols
+        return True, {'classes': sorted(list(set(y)))}
+    except Exception as e:
+        return False, {'error': str(e)}
+
+
+def predict_with_feedback_model(patient_symptoms: List[str], top_k: int = 3):
+    """Predict using the feedback-trained RF model if loaded."""
+    if rf_model is None or not rf_feature_order:
+        return None
+    # Build feature vector aligned to feature order
+    vec = np.zeros(len(rf_feature_order))
+    for s in patient_symptoms:
+        try:
+            idx = rf_feature_order.index(s)
+            vec[idx] = 1
+        except ValueError:
+            continue
+    if vec.sum() == 0:
+        return {
+            'primary_disease': None,
+            'confidence': 0.0,
+            'top_predictions': [],
+            'unknown_symptoms': [s for s in patient_symptoms if s not in rf_feature_order]
+        }
+    # Predict probabilities if available
+    proba = None
+    if hasattr(rf_model, 'predict_proba'):
+        proba = rf_model.predict_proba([vec])[0]
+        classes = rf_model.classes_
+        pairs = [(str(classes[i]), float(proba[i])) for i in range(len(classes))]
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        top = pairs[:max(1, top_k)]
+        primary_disease, primary_conf = top[0]
+        return {
+            'primary_disease': primary_disease,
+            'confidence': float(primary_conf),
+            'top_predictions': [{'disease': d, 'confidence': c} for d, c in top],
+            'unknown_symptoms': [s for s in patient_symptoms if s not in rf_feature_order]
+        }
+    # Fallback hard prediction
+    pred = str(rf_model.predict([vec])[0])
+    return {
+        'primary_disease': pred,
+        'confidence': None,
+        'top_predictions': [{'disease': pred, 'confidence': None}],
+        'unknown_symptoms': [s for s in patient_symptoms if s not in rf_feature_order]
+    }
 
 # Routes
 @app.route('/api/predict', methods=['POST'])
@@ -131,10 +434,16 @@ def predict():
     if not symptoms:
         return jsonify({'error': 'No symptoms provided'}), 400
     try:
-        disease = get_predicted_value(symptoms)
-        desc, pre, med, die, wrkout = helper(disease)
+        # Prefer feedback-trained model if available
+        pred = predict_with_feedback_model(symptoms) or get_predicted_value(symptoms)
+        disease = pred.get('primary_disease')
+        # In low-confidence or unknown cases, we can still respond with top suggestions
+        desc, pre, med, die, wrkout = ("", [], [], [], []) if not disease else helper(disease)
         response_data = {
             'disease': disease,
+            'confidence': pred.get('confidence'),
+            'top_predictions': pred.get('top_predictions'),
+            'unknown_symptoms': pred.get('unknown_symptoms'),
             'description': desc,
             'precautions': pre,
             'medications': med,
@@ -144,6 +453,26 @@ def predict():
         return jsonify(response_data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/learn', methods=['POST'])
+def learn_from_feedback():
+    try:
+        data = request.json
+        symptoms = data.get('symptoms', [])
+        confirmed = data.get('confirmed_disease')
+        if not symptoms or not confirmed:
+            return jsonify({'error': 'Both symptoms and confirmed_disease are required'}), 400
+        append_feedback(symptoms, confirmed)
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/retrain', methods=['POST'])
+def retrain_endpoint():
+    ok, info = retrain_feedback_model()
+    if ok:
+        return jsonify({'success': True, **info}), 200
+    return jsonify({'success': False, **info}), 500
 
 @app.route('/api/feedback', methods=['POST'])
 def send_feedback():
