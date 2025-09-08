@@ -1,16 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import PredictionPage from '../PredictionPages/PredictionPage';
 import Footer from '../footerComponents/Footer';
 import HeroBackground from '../HeroBackground';
 import './demo.css';
 
 const Demo = () => {
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    setIsVisible(true);
-  }, []);
+  // Removed unused state/effect and import to satisfy linter
 
   return (
     <div className="demo-container">

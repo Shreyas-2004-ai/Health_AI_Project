@@ -12,7 +12,7 @@ const PredictionPage = () => {
   const [symptomSuggestions, setSymptomSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentInput, setCurrentInput] = useState('');
-  const [selectedSymptoms, setSelectedSymptoms] = useState([]);
+  // Removed unused selectedSymptoms state to satisfy linter
   const [lastFormattedSymptoms, setLastFormattedSymptoms] = useState([]);
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [retraining, setRetraining] = useState(false);
@@ -83,15 +83,8 @@ const PredictionPage = () => {
       const parts = symptoms.split(',');
       const lastPart = parts[parts.length - 1].trim();
       setCurrentInput(lastPart);
-      
-      // Update selected symptoms array
-      const selected = parts
-        .map(part => part.trim())
-        .filter(part => part && part !== lastPart);
-      setSelectedSymptoms(selected);
     } else {
       setCurrentInput('');
-      setSelectedSymptoms([]);
     }
   }, [symptoms]);
 
