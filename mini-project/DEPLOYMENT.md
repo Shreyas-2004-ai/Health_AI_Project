@@ -37,8 +37,8 @@ PYTHON_VERSION=3.11.9
 ```
 
 ### 4. Build Configuration
-- **Framework Preset**: Other
-- **Build Command**: `npm run vercel-build`
+- **Framework Preset**: Create React App
+- **Build Command**: `npm install && npm run build`
 - **Output Directory**: `build`
 - **Install Command**: `npm install`
 
