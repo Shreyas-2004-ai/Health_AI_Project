@@ -17,16 +17,16 @@ function Footer() {
                             powered by cutting-edge machine learning.
                         </p>
                         <div className='social-links'>
-                            <a href="#" className='social-link' aria-label="Facebook">
+                            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className='social-link' aria-label="Facebook">
                                 <i className="fab fa-facebook-f"></i>
                             </a>
-                            <a href="#" className='social-link' aria-label="Twitter">
+                            <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className='social-link' aria-label="Twitter">
                                 <i className="fab fa-twitter"></i>
                             </a>
-                            <a href="#" className='social-link' aria-label="LinkedIn">
+                            <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className='social-link' aria-label="LinkedIn">
                                 <i className="fab fa-linkedin-in"></i>
                             </a>
-                            <a href="#" className='social-link' aria-label="Instagram">
+                            <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className='social-link' aria-label="Instagram">
                                 <i className="fab fa-instagram"></i>
                             </a>
                         </div>

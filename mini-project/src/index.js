@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
-import PredictionPage from './components/PredictionPages/PredictionPage';
 // import About from './components/aboutusComponents/About';
 // import About from './components/aboutusComponents/About';
 
