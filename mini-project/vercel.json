@@ -5,37 +5,7 @@
       "runtime": "python3.11"
     }
   },
-  "builds": [
-    {
-      "src": "api/predict.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "api/feedback.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "build"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/predict",
-      "dest": "/api/predict.py"
-    },
-    {
-      "src": "/api/feedback",
-      "dest": "/api/feedback.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ],
+  "routes": [],
   "env": {
     "PYTHON_VERSION": "3.11.9"
   },
