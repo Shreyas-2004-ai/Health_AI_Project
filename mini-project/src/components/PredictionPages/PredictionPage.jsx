@@ -4,7 +4,7 @@ import Footer from '../footerComponents/Footer';
 import './PredictionPage.css';
 
 const PredictionPage = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+  const API_BASE = process.env.REACT_APP_API_BASE || 'https://deekshith.pythonanywhere.com/';
   const [symptoms, setSymptoms] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
