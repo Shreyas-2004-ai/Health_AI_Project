@@ -3,12 +3,57 @@ import axios from "axios";
 import Footer from "../footerComponents/Footer";
 import "./PredictionPage.css";
 
+const GEMINI_API_KEY = "AIzaSyBq8G9AfPZhH0wOXV1EW1xuqd0_xbxlSEE";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+async function validateAndEnhanceWithGemini(symptoms, backendResult) {
+  const prompt = `You are a medical AI assistant. A symptom-based ML model predicted the following for a patient.
+
+Symptoms entered: ${symptoms.join(", ")}
+
+ML Model Prediction:
+- Disease: ${backendResult.disease}
+- Description: ${backendResult.description}
+- Precautions: ${backendResult.precautions.join(", ")}
+- Medications: ${backendResult.medications.join(", ")}
+- Diets: ${backendResult.diets.join(", ")}
+- Workouts: ${backendResult.workouts.join(", ")}
+
+Task: Evaluate if this prediction is medically reasonable for the given symptoms.
+- If the prediction is reasonable, respond with: {"valid": true}
+- If the prediction is NOT reasonable, respond with a corrected result in this exact JSON format:
+{
+  "valid": false,
+  "disease": "correct disease name",
+  "description": "brief description of the disease",
+  "precautions": ["precaution 1", "precaution 2", "precaution 3", "precaution 4"],
+  "medications": ["medication 1", "medication 2", "medication 3"],
+  "diets": ["diet suggestion 1", "diet suggestion 2", "diet suggestion 3"],
+  "workouts": ["workout 1", "workout 2", "workout 3"]
+}
+
+Respond with JSON only, no extra text.`;
+
+  const response = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  return JSON.parse(cleaned);
+}
+
 const PredictionPage = () => {
   const API_BASE =
     process.env.REACT_APP_API_BASE || "https://sanil.pythonanywhere.com/"; //"http://localhost:5000/";
   const [symptoms, setSymptoms] = useState("");
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [geminiValidating, setGeminiValidating] = useState(false);
+  const [geminiCorrected, setGeminiCorrected] = useState(false);
   const [error, setError] = useState("");
   const [symptomSuggestions, setSymptomSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -378,8 +423,34 @@ const PredictionPage = () => {
         symptoms: formattedSymptoms,
       });
 
-      setResult(response.data);
+      const backendData = response.data;
+      setResult(backendData);
       setLastFormattedSymptoms(formattedSymptoms);
+      setGeminiCorrected(false);
+
+      // Gemini validation step
+      if (backendData.disease) {
+        setGeminiValidating(true);
+        try {
+          const geminiResult = await validateAndEnhanceWithGemini(formattedSymptoms, backendData);
+          if (!geminiResult.valid) {
+            setResult((prev) => ({
+              ...prev,
+              disease: geminiResult.disease,
+              description: geminiResult.description,
+              precautions: geminiResult.precautions,
+              medications: geminiResult.medications,
+              diets: geminiResult.diets,
+              workouts: geminiResult.workouts,
+            }));
+            setGeminiCorrected(true);
+          }
+        } catch (geminiErr) {
+          console.warn("Gemini validation failed, using ML result:", geminiErr);
+        } finally {
+          setGeminiValidating(false);
+        }
+      }
     } catch (err) {
       console.error("Prediction error:", err);
       setError(
@@ -396,6 +467,7 @@ const PredictionPage = () => {
     setError("");
     setShowSuggestions(false);
     setLastFormattedSymptoms([]);
+    setGeminiCorrected(false);
   };
 
   const sendFeedback = async () => {
@@ -544,14 +616,35 @@ const PredictionPage = () => {
           </div>
         )}
 
+        {/* Gemini Validating State */}
+        {geminiValidating && (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Gemini AI is validating the prediction...</p>
+          </div>
+        )}
+
         {/* Results Display */}
-        {result && !loading && (
+        {result && !loading && !geminiValidating && (
           <div className="prediction-result animate-fade-in-up">
             <h2 className="result-title">Here Are Your Insights!</h2>
 
             <div className="result-card">
               <div className="disease-info">
                 <h3 className="disease-name">{result.disease}</h3>
+                {geminiCorrected && (
+                  <span style={{
+                    display: "inline-block",
+                    background: "#4f46e5",
+                    color: "#fff",
+                    fontSize: "0.75rem",
+                    padding: "2px 10px",
+                    borderRadius: "12px",
+                    marginBottom: "8px"
+                  }}>
+                    ✦ Enhanced by Gemini AI
+                  </span>
+                )}
                 <p className="disease-description">{result.description}</p>
               </div>
 
