@@ -6,33 +6,31 @@ import "./PredictionPage.css";
 const GEMINI_API_KEY = "AIzaSyBq8G9AfPZhH0wOXV1EW1xuqd0_xbxlSEE";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-async function validateAndEnhanceWithGemini(symptoms, backendResult) {
-  const prompt = `You are a medical AI assistant. A symptom-based ML model predicted the following for a patient.
+async function enhanceWithGemini(symptoms, backendResult) {
+  const prompt = `You are a professional medical AI assistant. An ML model analyzed patient symptoms and produced a health prediction. Your job is to:
+1. Check if the predicted disease is correct for the given symptoms. If not, correct it.
+2. Rewrite ALL fields with clear, professional, and helpful medical language.
+3. Always return the full enhanced result — never skip this step.
 
-Symptoms entered: ${symptoms.join(", ")}
+Patient Symptoms: ${symptoms.join(", ")}
 
-ML Model Prediction:
+ML Model Output:
 - Disease: ${backendResult.disease}
 - Description: ${backendResult.description}
-- Precautions: ${backendResult.precautions.join(", ")}
-- Medications: ${backendResult.medications.join(", ")}
-- Diets: ${backendResult.diets.join(", ")}
-- Workouts: ${backendResult.workouts.join(", ")}
+- Precautions: ${(backendResult.precautions || []).join(", ")}
+- Medications: ${(backendResult.medications || []).join(", ")}
+- Diets: ${(backendResult.diets || []).join(", ")}
+- Workouts: ${(backendResult.workouts || []).join(", ")}
 
-Task: Evaluate if this prediction is medically reasonable for the given symptoms.
-- If the prediction is reasonable, respond with: {"valid": true}
-- If the prediction is NOT reasonable, respond with a corrected result in this exact JSON format:
+Return ONLY this JSON (no extra text, no markdown):
 {
-  "valid": false,
-  "disease": "correct disease name",
-  "description": "brief description of the disease",
-  "precautions": ["precaution 1", "precaution 2", "precaution 3", "precaution 4"],
-  "medications": ["medication 1", "medication 2", "medication 3"],
-  "diets": ["diet suggestion 1", "diet suggestion 2", "diet suggestion 3"],
-  "workouts": ["workout 1", "workout 2", "workout 3"]
-}
-
-Respond with JSON only, no extra text.`;
+  "disease": "disease name (correct it if wrong)",
+  "description": "2-3 sentence professional description of the disease",
+  "precautions": ["clear precaution 1", "clear precaution 2", "clear precaution 3", "clear precaution 4"],
+  "medications": ["medication 1", "medication 2", "medication 3", "medication 4"],
+  "diets": ["diet recommendation 1", "diet recommendation 2", "diet recommendation 3", "diet recommendation 4"],
+  "workouts": ["activity/rest recommendation 1", "activity/rest recommendation 2", "activity/rest recommendation 3"]
+}`;
 
   const response = await fetch(GEMINI_URL, {
     method: "POST",
@@ -428,25 +426,23 @@ const PredictionPage = () => {
       setLastFormattedSymptoms(formattedSymptoms);
       setGeminiCorrected(false);
 
-      // Gemini validation step
+      // Gemini enhancement step — always runs to improve and validate output
       if (backendData.disease) {
         setGeminiValidating(true);
         try {
-          const geminiResult = await validateAndEnhanceWithGemini(formattedSymptoms, backendData);
-          if (!geminiResult.valid) {
-            setResult((prev) => ({
-              ...prev,
-              disease: geminiResult.disease,
-              description: geminiResult.description,
-              precautions: geminiResult.precautions,
-              medications: geminiResult.medications,
-              diets: geminiResult.diets,
-              workouts: geminiResult.workouts,
-            }));
-            setGeminiCorrected(true);
-          }
+          const geminiResult = await enhanceWithGemini(formattedSymptoms, backendData);
+          setResult((prev) => ({
+            ...prev,
+            disease: geminiResult.disease || prev.disease,
+            description: geminiResult.description || prev.description,
+            precautions: geminiResult.precautions?.length ? geminiResult.precautions : prev.precautions,
+            medications: geminiResult.medications?.length ? geminiResult.medications : prev.medications,
+            diets: geminiResult.diets?.length ? geminiResult.diets : prev.diets,
+            workouts: geminiResult.workouts?.length ? geminiResult.workouts : prev.workouts,
+          }));
+          setGeminiCorrected(true);
         } catch (geminiErr) {
-          console.warn("Gemini validation failed, using ML result:", geminiErr);
+          console.warn("Gemini enhancement failed, using ML result:", geminiErr);
         } finally {
           setGeminiValidating(false);
         }
@@ -642,7 +638,7 @@ const PredictionPage = () => {
                     borderRadius: "12px",
                     marginBottom: "8px"
                   }}>
-                    ✦ Enhanced by Gemini AI
+                    ✦ Enhanced & Verified by Gemini AI
                   </span>
                 )}
                 <p className="disease-description">{result.description}</p>
