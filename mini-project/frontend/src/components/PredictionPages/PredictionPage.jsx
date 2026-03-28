@@ -422,30 +422,48 @@ const PredictionPage = () => {
       });
 
       const backendData = response.data;
-      setResult(backendData);
       setLastFormattedSymptoms(formattedSymptoms);
       setGeminiCorrected(false);
 
-      // Gemini enhancement step — always runs to improve and validate output
+      // Gemini enhancement — runs before showing any result
       if (backendData.disease) {
         setGeminiValidating(true);
         try {
-          const geminiResult = await enhanceWithGemini(formattedSymptoms, backendData);
-          setResult((prev) => ({
-            ...prev,
-            disease: geminiResult.disease || prev.disease,
-            description: geminiResult.description || prev.description,
-            precautions: geminiResult.precautions?.length ? geminiResult.precautions : prev.precautions,
-            medications: geminiResult.medications?.length ? geminiResult.medications : prev.medications,
-            diets: geminiResult.diets?.length ? geminiResult.diets : prev.diets,
-            workouts: geminiResult.workouts?.length ? geminiResult.workouts : prev.workouts,
-          }));
+          const geminiResult = await enhanceWithGemini(
+            formattedSymptoms,
+            backendData
+          );
+          // Merge Gemini output over backend data
+          setResult({
+            ...backendData,
+            disease: geminiResult.disease || backendData.disease,
+            description:
+              geminiResult.description || backendData.description,
+            precautions: geminiResult.precautions?.length
+              ? geminiResult.precautions
+              : backendData.precautions,
+            medications: geminiResult.medications?.length
+              ? geminiResult.medications
+              : backendData.medications,
+            diets: geminiResult.diets?.length
+              ? geminiResult.diets
+              : backendData.diets,
+            workouts: geminiResult.workouts?.length
+              ? geminiResult.workouts
+              : backendData.workouts,
+          });
           setGeminiCorrected(true);
         } catch (geminiErr) {
-          console.warn("Gemini enhancement failed, using ML result:", geminiErr);
+          console.warn(
+            "Gemini enhancement failed, using ML result:",
+            geminiErr
+          );
+          setResult(backendData);
         } finally {
           setGeminiValidating(false);
         }
+      } else {
+        setResult(backendData);
       }
     } catch (err) {
       console.error("Prediction error:", err);
@@ -592,10 +610,14 @@ const PredictionPage = () => {
         </div>
 
         {/* Loading State */}
-        {loading && (
+        {(loading || geminiValidating) && (
           <div className="loading-container">
             <div className="loading-spinner"></div>
-            <p>Analyzing your symptoms with AI...</p>
+            <p>
+              {geminiValidating
+                ? "✦ Gemini AI is enhancing your results..."
+                : "Analyzing your symptoms with AI..."}
+            </p>
           </div>
         )}
 
@@ -612,13 +634,7 @@ const PredictionPage = () => {
           </div>
         )}
 
-        {/* Gemini Validating State */}
-        {geminiValidating && (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Gemini AI is validating the prediction...</p>
-          </div>
-        )}
+
 
         {/* Results Display */}
         {result && !loading && !geminiValidating && (
