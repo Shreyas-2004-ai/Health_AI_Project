@@ -11,16 +11,21 @@ import difflib
 app = Flask(__name__)
 CORS(app)
 
+# Resolve paths relative to this file so it works both locally and on Vercel
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/
+DATA_DIR = os.path.join(BASE_DIR, "src", "datasets")
+MODEL_DIR = os.path.join(BASE_DIR, "src", "models")
+
 # Load datasets
-sym_des = pd.read_csv("src/datasets/symtoms_df.csv")
-precautions = pd.read_csv("src/datasets/precautions_df.csv")
-workout = pd.read_csv("src/datasets/workout_df.csv")
-description = pd.read_csv("src/datasets/description.csv")
-medications = pd.read_csv('src/datasets/medications.csv')
-diets = pd.read_csv("src/datasets/diets.csv")
+sym_des = pd.read_csv(os.path.join(DATA_DIR, "symtoms_df.csv"))
+precautions = pd.read_csv(os.path.join(DATA_DIR, "precautions_df.csv"))
+workout = pd.read_csv(os.path.join(DATA_DIR, "workout_df.csv"))
+description = pd.read_csv(os.path.join(DATA_DIR, "description.csv"))
+medications = pd.read_csv(os.path.join(DATA_DIR, "medications.csv"))
+diets = pd.read_csv(os.path.join(DATA_DIR, "diets.csv"))
 
 # Load model
-svc = pickle.load(open('src/models/svc.pkl', 'rb'))
+svc = pickle.load(open(os.path.join(MODEL_DIR, "svc.pkl"), 'rb'))
 
 # Helper functions
 def helper(dis):
