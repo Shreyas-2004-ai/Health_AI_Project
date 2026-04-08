@@ -11,6 +11,13 @@ import os
 from typing import List
 import difflib
 
+# Load .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Flask app
 app = Flask(__name__)
 CORS(app)
@@ -534,6 +541,140 @@ This feedback was submitted through the Health AI website.
             'success': False,
             'message': 'Failed to send feedback. Please try again.'
         }), 500
+
+@app.route('/api/enhance', methods=['POST'])
+def enhance_with_ai():
+    """Enhance/validate ML prediction using Groq → Gemini → rule-based fallback."""
+    import requests as http_requests
+    import json, re
+
+    data = request.json
+    symptoms = data.get('symptoms', [])
+    disease = data.get('disease', '')
+    symptom_set = set(s.lower().strip() for s in symptoms)
+
+    prompt = f"""You are an intelligent medical assistant integrated into a disease prediction system.
+
+IMPORTANT RULES:
+- Do NOT mention any AI, API, or external service.
+- Be confident and direct.
+
+INPUT:
+Symptoms: {', '.join(symptoms)}
+Initial Prediction: {disease}
+
+TASK:
+1. Analyze the symptoms carefully.
+2. Validate whether the initial prediction is correct.
+3. If correct keep it. If incorrect replace with a more accurate disease.
+4. Prefer common and realistic diseases.
+
+IMPORTANT DECISION RULES:
+- General symptoms only (fever, headache, fatigue, body pain, chills) → ALWAYS return "Viral Fever"
+- Dengue → ONLY if: pain_behind_the_eyes + skin_rash or red_spots_over_body
+- Chicken pox → ONLY if: blister + itching + red_spots_over_body
+- Malaria → ONLY if: high_fever + chills + shivering + sweating (all present)
+- Typhoid → ONLY if: high_fever + abdominal_pain + constipation
+- Jaundice → ONLY if: yellowish_skin or yellowing_of_eyes + dark_urine
+- Acne → if: pus_filled_pimples or blackheads
+- Allergy → if: continuous_sneezing + runny_nose + watering_from_eyes
+- UTI → if: burning_micturition + bladder_discomfort
+- Migraine → if: headache + nausea + visual_disturbances
+- Asthma → if: breathlessness + cough + chest_pain
+
+OUTPUT FORMAT — STRICT JSON ONLY, no markdown, no extra text:
+{{"disease":"Final Disease Name","confidence":"High / Medium / Low","reason":"1-2 line explanation","precautions":["p1","p2","p3"],"medications":["m1","m2","m3"],"diet":["d1","d2"],"workout":["w1","w2"]}}"""
+
+    def parse_ai_response(text):
+        text = text.strip().replace('```json', '').replace('```', '').strip()
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            return json.loads(match.group(0))
+        return json.loads(text)
+
+    # --- Try Groq first ---
+    groq_key = os.environ.get('GROQ_API_KEY', '')
+    if groq_key:
+        try:
+            resp = http_requests.post(
+                'https://api.groq.com/openai/v1/chat/completions',
+                headers={'Authorization': f'Bearer {groq_key}', 'Content-Type': 'application/json'},
+                json={
+                    'model': 'llama-3.1-8b-instant',
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'temperature': 0.2,
+                    'max_tokens': 512
+                },
+                timeout=15
+            )
+            if resp.status_code == 200:
+                text = resp.json()['choices'][0]['message']['content']
+                parsed = parse_ai_response(text)
+                return jsonify(parsed), 200
+        except Exception as e:
+            print(f'Groq failed: {e}')
+
+    # --- Try Gemini as backup ---
+    gemini_key = os.environ.get('GEMINI_API_KEY', '')
+    if gemini_key:
+        try:
+            resp = http_requests.post(
+                f'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}',
+                json={'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 512}},
+                timeout=15
+            )
+            if resp.status_code == 200:
+                text = resp.json()['candidates'][0]['content']['parts'][0]['text']
+                parsed = parse_ai_response(text)
+                return jsonify(parsed), 200
+        except Exception as e:
+            print(f'Gemini failed: {e}')
+
+    # --- Smart rule-based fallback ---
+    general_symptoms = {'fever', 'high_fever', 'mild_fever', 'headache', 'fatigue', 'body_pain',
+                        'muscle_pain', 'lethargy', 'malaise', 'sweating', 'chills', 'shivering',
+                        'nausea', 'loss_of_appetite', 'weakness_in_limbs'}
+
+    def match(specific, min_count=2):
+        return len(symptom_set & specific) >= min_count
+
+    if match({'yellowish_skin', 'yellowing_of_eyes', 'dark_urine', 'yellow_urine'}, 2):
+        final_disease, reason, confidence = 'Jaundice', 'Yellowing symptoms and dark urine indicate liver condition.', 'High'
+    elif match({'burning_micturition', 'continuous_feel_of_urine', 'bladder_discomfort'}, 2):
+        final_disease, reason, confidence = 'Urinary tract infection', 'Burning urination and bladder discomfort are classic UTI signs.', 'High'
+    elif len(symptom_set & {'pus_filled_pimples', 'blackheads', 'skin_peeling'}) >= 1:
+        final_disease, reason, confidence = 'Acne', 'Skin symptoms like pimples and blackheads indicate acne.', 'High'
+    elif match({'continuous_sneezing', 'runny_nose', 'watering_from_eyes'}, 2):
+        final_disease, reason, confidence = 'Allergy', 'Sneezing, runny nose and watery eyes are classic allergy symptoms.', 'High'
+    elif match({'breathlessness', 'cough', 'chest_pain'}, 2):
+        final_disease, reason, confidence = 'Bronchial Asthma', 'Breathlessness and chest symptoms indicate asthma.', 'High'
+    elif match({'headache', 'nausea', 'visual_disturbances', 'blurred_and_distorted_vision'}, 2) and 'headache' in symptom_set:
+        final_disease, reason, confidence = 'Migraine', 'Severe headache with nausea and visual disturbances suggest migraine.', 'High'
+    elif match({'blister', 'skin_rash', 'red_spots_over_body', 'itching'}, 3):
+        final_disease, reason, confidence = 'Chicken pox', 'Blister rash with itching are defining chickenpox symptoms.', 'High'
+    elif match({'pain_behind_the_eyes', 'red_spots_over_body', 'skin_rash'}, 2):
+        final_disease, reason, confidence = 'Dengue', 'Pain behind eyes and rash alongside fever indicate dengue.', 'High'
+    elif match({'abdominal_pain', 'constipation', 'high_fever'}, 2):
+        final_disease, reason, confidence = 'Typhoid', 'Sustained fever with abdominal pain suggest typhoid.', 'Medium'
+    elif match({'high_fever', 'chills', 'shivering', 'sweating'}, 3):
+        final_disease, reason, confidence = 'Malaria', 'Cyclic fever with chills and sweating are classic malaria signs.', 'Medium'
+    elif symptom_set & {'fever', 'high_fever', 'mild_fever'} and len(symptom_set - general_symptoms) == 0:
+        final_disease, reason, confidence = 'Viral Fever', 'General symptoms without specific indicators suggest viral fever.', 'High'
+    else:
+        final_disease, reason, confidence = disease, f'Symptoms are consistent with {disease}.', 'Medium'
+
+    desc, pre, med, die, wrkout = helper(final_disease) if final_disease and final_disease != 'Consult a doctor' else ('', [], [], [], [])
+
+    return jsonify({
+        'disease': final_disease,
+        'confidence': confidence,
+        'reason': reason,
+        'precautions': pre or ['Consult a healthcare professional', 'Rest adequately', 'Stay hydrated'],
+        'medications': med or ['Consult a doctor for proper medication'],
+        'diet': die or ['Light meals', 'Stay hydrated'],
+        'workout': wrkout or ['Rest until symptoms improve']
+    }), 200
+
 
 if __name__ == '__main__':
     app.run(debug=True)
